@@ -1,0 +1,12 @@
+AUTISM THROUGH GRACE — GLAMOROUSGRAMMYGLOWUP REDESIGN
+
+Updated:
+- Royal purple, polished silver, and white brand system
+- Signature butterfly header mark, onboarding mark, app icon, watermark, and accents
+- Premium gradient app header
+- Glass-style navigation with mobile bottom navigation
+- Refined cards, buttons, fields, chips, calendar, dialogs, toast, and empty states
+- GlamorousGrammyGlowUp product attribution
+- Existing JavaScript functionality and element IDs preserved
+
+Open index.html through VS Code Live Server for the best result.

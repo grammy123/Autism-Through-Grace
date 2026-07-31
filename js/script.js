@@ -348,7 +348,11 @@ const DEFAULT_STATE = {
     appointmentReminder: true,
     appointmentReminderLead: "1-day",
     pinProtection: false,
-    pin: ""
+    pin: "",
+    pinHash: "",
+    pinSalt: "",
+    recoveryHash: "",
+    recoverySalt: ""
   },
   children: [],
   journalEntries: [],
@@ -402,7 +406,7 @@ function init() {
   window.addEventListener("online", updateConnectionStatus);
   window.addEventListener("offline", updateConnectionStatus);
 
-  if (state.preferences.pinProtection && state.preferences.pin) {
+  if (state.preferences.pinProtection && hasPinCredential()) {
     openDialog($("pin-unlock-modal"));
     $("pin-unlock-input").focus();
   } else if (!state.onboardingComplete) {
@@ -2007,45 +2011,51 @@ function bindSettings() {
       !$("pin-protection-toggle").checked;
   });
 
-  $("security-settings-form").addEventListener("submit", (event) => {
+  $("security-settings-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     clearValidation();
 
     const enabled = $("pin-protection-toggle").checked;
 
     if (!enabled) {
-      state.preferences.pinProtection = false;
-      state.preferences.pin = "";
+      clearStoredSecurity();
       saveState();
-      $("security-pin-input").value = "";
-      $("security-pin-confirm-input").value = "";
+      clearSecurityInputs();
       showToast("PIN protection was disabled.", "success");
       return;
     }
 
     const pin = $("security-pin-input").value;
     const confirmation = $("security-pin-confirm-input").value;
+    const phrase = $("security-recovery-phrase-input").value.trim();
+    const phraseConfirmation = $("security-recovery-phrase-confirm-input").value.trim();
     const errors = [];
 
-    if (!/^\d{4,6}$/.test(pin)) {
-      errors.push("Enter a PIN containing 4 to 6 digits.");
-    }
-
-    if (pin !== confirmation) {
-      errors.push("The PIN entries do not match.");
-    }
+    if (!/^\d{4,6}$/.test(pin)) errors.push("Enter a PIN containing 4 to 6 digits.");
+    if (pin !== confirmation) errors.push("The PIN entries do not match.");
+    if (phrase.length < 8) errors.push("Create a recovery phrase containing at least 8 characters.");
+    if (phrase !== phraseConfirmation) errors.push("The recovery phrase entries do not match.");
 
     if (errors.length) {
       showValidation(errors);
       return;
     }
 
-    state.preferences.pinProtection = true;
-    state.preferences.pin = pin;
-    saveState();
-    $("security-pin-input").value = "";
-    $("security-pin-confirm-input").value = "";
-    showToast("PIN protection was saved.", "success");
+    try {
+      const pinCredential = await createCredential(pin);
+      const recoveryCredential = await createCredential(normalizeRecoveryPhrase(phrase));
+      state.preferences.pinProtection = true;
+      state.preferences.pin = "";
+      state.preferences.pinHash = pinCredential.hash;
+      state.preferences.pinSalt = pinCredential.salt;
+      state.preferences.recoveryHash = recoveryCredential.hash;
+      state.preferences.recoverySalt = recoveryCredential.salt;
+      saveState();
+      clearSecurityInputs();
+      showToast("PIN protection and recovery were saved.", "success");
+    } catch {
+      showValidation(["Secure PIN storage is unavailable in this browser."]);
+    }
   });
 
   $("backup-data-button").addEventListener("click", backupData);
@@ -2592,22 +2602,28 @@ function bindGlobalControls() {
     if (callback) callback();
   });
 
-  $("pin-unlock-form").addEventListener("submit", (event) => {
+  $("pin-unlock-form").addEventListener("submit", async (event) => {
     event.preventDefault();
+    const input = $("pin-unlock-input");
+    const valid = await verifyPin(input.value);
 
-    if ($("pin-unlock-input").value === state.preferences.pin) {
+    if (valid) {
       $("pin-unlock-error").hidden = true;
-      $("pin-unlock-input").value = "";
+      input.value = "";
       closeDialog($("pin-unlock-modal"));
-
-      if (!state.onboardingComplete) {
-        openDialog($("onboarding-modal"));
-      }
+      if (!state.onboardingComplete) openDialog($("onboarding-modal"));
     } else {
       $("pin-unlock-error").hidden = false;
-      $("pin-unlock-input").select();
+      input.select();
     }
   });
+
+  $("forgot-pin-button").addEventListener("click", openForgotPin);
+  $("forgot-pin-close-button").addEventListener("click", closeForgotPin);
+  $("forgot-pin-form").addEventListener("submit", resetPinWithRecoveryPhrase);
+  $("forgot-pin-restore-button").addEventListener("click", () => $("forgot-pin-restore-input").click());
+  $("forgot-pin-restore-input").addEventListener("change", restoreBackupFromLockScreen);
+  $("forgot-pin-reset-app-button").addEventListener("click", resetLockedApp);
 
   document.addEventListener("click", (event) => {
     const childAppointment = event.target.closest(
@@ -2942,6 +2958,164 @@ function sortJournalDescending(a, b) {
   return (
     new Date(`${b.date}T${b.time || "00:00"}`) -
     new Date(`${a.date}T${a.time || "00:00"}`)
+  );
+}
+
+function hasPinCredential() {
+  return Boolean(state.preferences.pinHash || state.preferences.pin);
+}
+
+async function createCredential(secret) {
+  const saltBytes = crypto.getRandomValues(new Uint8Array(16));
+  const salt = bytesToBase64(saltBytes);
+  const hash = await hashSecret(secret, salt);
+  return { salt, hash };
+}
+
+async function hashSecret(secret, salt) {
+  if (!window.crypto?.subtle) throw new Error("Web Crypto unavailable");
+  const encoded = new TextEncoder().encode(`${salt}:${secret}`);
+  const digest = await crypto.subtle.digest("SHA-256", encoded);
+  return bytesToBase64(new Uint8Array(digest));
+}
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  return btoa(binary);
+}
+
+async function verifyPin(pin) {
+  if (state.preferences.pinHash && state.preferences.pinSalt) {
+    try {
+      return (await hashSecret(pin, state.preferences.pinSalt)) === state.preferences.pinHash;
+    } catch {
+      return false;
+    }
+  }
+  return Boolean(state.preferences.pin) && pin === state.preferences.pin;
+}
+
+function normalizeRecoveryPhrase(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function clearStoredSecurity() {
+  state.preferences.pinProtection = false;
+  state.preferences.pin = "";
+  state.preferences.pinHash = "";
+  state.preferences.pinSalt = "";
+  state.preferences.recoveryHash = "";
+  state.preferences.recoverySalt = "";
+}
+
+function clearSecurityInputs() {
+  [
+    "security-pin-input",
+    "security-pin-confirm-input",
+    "security-recovery-phrase-input",
+    "security-recovery-phrase-confirm-input"
+  ].forEach((id) => { if ($(id)) $(id).value = ""; });
+}
+
+function openForgotPin() {
+  $("forgot-pin-form").reset();
+  $("forgot-pin-error").hidden = true;
+  $("recovery-phrase-section").hidden = !state.preferences.recoveryHash;
+  closeDialog($("pin-unlock-modal"));
+  openDialog($("forgot-pin-modal"));
+}
+
+function closeForgotPin() {
+  closeDialog($("forgot-pin-modal"));
+  openDialog($("pin-unlock-modal"));
+  $("pin-unlock-input").focus();
+}
+
+async function resetPinWithRecoveryPhrase(event) {
+  event.preventDefault();
+  const error = $("forgot-pin-error");
+  const phrase = normalizeRecoveryPhrase($("forgot-pin-recovery-input").value);
+  const pin = $("forgot-pin-new-input").value;
+  const confirmation = $("forgot-pin-confirm-input").value;
+
+  if (!state.preferences.recoveryHash || !state.preferences.recoverySalt) {
+    error.textContent = "No recovery phrase was configured for this PIN.";
+    error.hidden = false;
+    return;
+  }
+  if (!/^\d{4,6}$/.test(pin)) {
+    error.textContent = "Enter a new PIN containing 4 to 6 digits.";
+    error.hidden = false;
+    return;
+  }
+  if (pin !== confirmation) {
+    error.textContent = "The new PIN entries do not match.";
+    error.hidden = false;
+    return;
+  }
+
+  try {
+    const phraseHash = await hashSecret(phrase, state.preferences.recoverySalt);
+    if (phraseHash !== state.preferences.recoveryHash) {
+      error.textContent = "The recovery phrase is incorrect.";
+      error.hidden = false;
+      return;
+    }
+    const credential = await createCredential(pin);
+    state.preferences.pin = "";
+    state.preferences.pinHash = credential.hash;
+    state.preferences.pinSalt = credential.salt;
+    state.preferences.pinProtection = true;
+    saveState();
+    closeDialog($("forgot-pin-modal"));
+    showToast("Your PIN was reset successfully.", "success");
+  } catch {
+    error.textContent = "PIN recovery is unavailable in this browser.";
+    error.hidden = false;
+  }
+}
+
+async function restoreBackupFromLockScreen(event) {
+  const file = event.target.files?.[0];
+  event.target.value = "";
+  if (!file) return;
+  try {
+    const parsed = JSON.parse(await file.text());
+    const restored = parsed.data || parsed;
+    if (!restored || typeof restored !== "object" || !Array.isArray(restored.journalEntries) || !Array.isArray(restored.children)) {
+      throw new Error("Invalid backup");
+    }
+    state = mergeState(restored);
+    clearStoredSecurity();
+    saveState();
+    applyStateToForms();
+    renderAll();
+    closeDialog($("forgot-pin-modal"));
+    showToast("Backup restored. PIN protection was turned off.", "success");
+  } catch {
+    $("forgot-pin-error").textContent = "The selected file is not a valid Autism Through Grace backup.";
+    $("forgot-pin-error").hidden = false;
+  }
+}
+
+function resetLockedApp() {
+  closeDialog($("forgot-pin-modal"));
+  confirmAction(
+    "Erase Local App Data",
+    "This permanently deletes all profiles, journal entries, appointments, resources, lesson progress, and settings stored on this device.",
+    () => {
+      localStorage.removeItem(STORAGE_KEY);
+      state = structuredClone(DEFAULT_STATE);
+      applyStateToForms();
+      setDefaultDates();
+      renderAll();
+      closeAllDialogs();
+      currentOnboardingStep = 1;
+      showOnboardingStep(1);
+      openDialog($("onboarding-modal"));
+      showToast("Local app data was erased. You can start over now.", "success");
+    }
   );
 }
 

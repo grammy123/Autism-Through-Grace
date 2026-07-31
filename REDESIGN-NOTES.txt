@@ -10,3 +10,10 @@ Updated:
 - Existing JavaScript functionality and element IDs preserved
 
 Open index.html through VS Code Live Server for the best result.
+
+PIN RECOVERY UPDATE
+- Added a Forgot PIN recovery screen.
+- New PIN setups require a recovery phrase.
+- New PINs and recovery phrases are stored as salted SHA-256 hashes, not plain text.
+- Recovery options include recovery phrase reset, backup restore, and local-data reset.
+- Existing plain-text PIN installations remain compatible until the PIN is changed.

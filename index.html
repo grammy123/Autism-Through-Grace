@@ -2100,6 +2100,34 @@
                     autocomplete="new-password"
                   >
                 </div>
+
+                <div class="field-group">
+                  <label for="security-recovery-phrase-input">
+                    Recovery phrase
+                  </label>
+                  <input
+                    id="security-recovery-phrase-input"
+                    type="password"
+                    minlength="8"
+                    autocomplete="new-password"
+                    aria-describedby="security-recovery-help"
+                  >
+                  <p id="security-recovery-help" class="helper-text">
+                    Use at least 8 characters. Keep this phrase somewhere safe; it is required to reset a forgotten PIN without deleting your data.
+                  </p>
+                </div>
+
+                <div class="field-group">
+                  <label for="security-recovery-phrase-confirm-input">
+                    Confirm recovery phrase
+                  </label>
+                  <input
+                    id="security-recovery-phrase-confirm-input"
+                    type="password"
+                    minlength="8"
+                    autocomplete="new-password"
+                  >
+                </div>
               </div>
 
               <button
@@ -3229,6 +3257,13 @@
 
       <div class="modal__footer">
         <button
+          id="forgot-pin-button"
+          class="button button--secondary"
+          type="button"
+        >
+          Forgot PIN?
+        </button>
+        <button
           id="pin-unlock-button"
           class="button button--primary"
           type="submit"
@@ -3237,6 +3272,68 @@
         </button>
       </div>
     </form>
+  </dialog>
+
+  <!-- FORGOT PIN MODAL -->
+  <dialog
+    id="forgot-pin-modal"
+    class="modal modal--small"
+    aria-labelledby="forgot-pin-title"
+  >
+    <div class="modal__content">
+      <div class="modal__header">
+        <div>
+          <p class="eyebrow">Local recovery</p>
+          <h2 id="forgot-pin-title">Recover App Access</h2>
+        </div>
+        <button
+          id="forgot-pin-close-button"
+          class="icon-button"
+          type="button"
+          aria-label="Close recovery options"
+        >×</button>
+      </div>
+
+      <div class="modal__body">
+        <section id="recovery-phrase-section">
+          <h3>Use your recovery phrase</h3>
+          <p class="helper-text">Enter the phrase you created when PIN protection was enabled, then choose a new PIN.</p>
+          <form id="forgot-pin-form" novalidate>
+            <div class="field-group">
+              <label for="forgot-pin-recovery-input">Recovery phrase</label>
+              <input id="forgot-pin-recovery-input" type="password" autocomplete="current-password">
+            </div>
+            <div class="field-group">
+              <label for="forgot-pin-new-input">New 4–6 digit PIN</label>
+              <input id="forgot-pin-new-input" type="password" inputmode="numeric" minlength="4" maxlength="6" pattern="[0-9]{4,6}" autocomplete="new-password">
+            </div>
+            <div class="field-group">
+              <label for="forgot-pin-confirm-input">Confirm new PIN</label>
+              <input id="forgot-pin-confirm-input" type="password" inputmode="numeric" minlength="4" maxlength="6" pattern="[0-9]{4,6}" autocomplete="new-password">
+            </div>
+            <p id="forgot-pin-error" class="field-error" role="alert" hidden></p>
+            <button class="button button--primary" type="submit">Reset PIN</button>
+          </form>
+        </section>
+
+        <hr>
+
+        <section>
+          <h3>Restore a backup</h3>
+          <p class="helper-text">A backup created by this app can restore your information. During recovery, PIN protection from the backup will be turned off so you can regain access.</p>
+          <button id="forgot-pin-restore-button" class="button button--secondary" type="button">Choose Backup File</button>
+          <input id="forgot-pin-restore-input" type="file" accept="application/json,.json" hidden>
+        </section>
+
+        <hr>
+
+        <section>
+          <h3>Reset the app</h3>
+          <p class="helper-text">Use this only when no recovery phrase or backup is available. It permanently deletes all information stored by this app on this device.</p>
+          <button id="forgot-pin-reset-app-button" class="button button--danger" type="button">Erase Local Data and Start Over</button>
+        </section>
+      </div>
+    </div>
   </dialog>
 
   <div
